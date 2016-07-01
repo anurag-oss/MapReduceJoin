@@ -1,7 +1,13 @@
 package hadoopjoinexample;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
@@ -111,15 +117,39 @@ public class Driver extends Configured implements Tool{
 	}
 	               
 	public static class ProductMapper extends Mapper<LongWritable, Text, ProductIdKey, JoinGenericWritable>{
+		
+		
+		private HashMap<Integer, String> productSubCategories = new HashMap<Integer, String>();
+        
+	    private void readProductSubcategoriesFile(URI uri) throws IOException{
+	        List<String> lines = FileUtils.readLines(new File(uri));
+	        for (String line : lines) {
+	            String[] recordFields = line.split("\\t");
+	            int key = Integer.parseInt(recordFields[0]);
+	            String productSubcategoryName = recordFields[2];
+	            productSubCategories.put(key, productSubcategoryName);
+	        }
+	    }
+	    
+	    
+	    public void setup(Context context) throws IOException{
+	        URI[] uris = context.getCacheFiles();
+	        readProductSubcategoriesFile(uris[0]);
+	    }
+	       
+		
+		
 	    public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 	        String[] recordFields = value.toString().split("\\t");
 	        int productId = Integer.parseInt(recordFields[0]);
 	        String productName = recordFields[1];
 	        String productNumber = recordFields[2];
+	        int productSubcategoryId = recordFields[18].length() > 0 ? Integer.parseInt(recordFields[18]) : 0;
+	        String productSubcategoryName = productSubcategoryId > 0 ? productSubCategories.get(productSubcategoryId) : "";
 	         
 	        //setting the record type correctly
 	        ProductIdKey recordKey = new ProductIdKey(productId, ProductIdKey.PRODUCT_RECORD);
-	        ProductRecord record = new ProductRecord(productName, productNumber);
+	        ProductRecord record = new ProductRecord(productName, productNumber,productSubcategoryName);
 	        JoinGenericWritable genericRecord = new JoinGenericWritable(record);
 	        context.write(recordKey, genericRecord);
 	    }
@@ -147,6 +177,7 @@ public class Driver extends Configured implements Tool{
 	                output.append(Integer.parseInt(key.productId.toString())).append(", ");
 	                output.append(pRecord.productName.toString()).append(", ");
 	                output.append(pRecord.productNumber.toString()).append(", ");
+	                output.append(pRecord.productSubCategoryName.toString()).append(", ");
 	            } else {
 	                SalesOrderDataRecord record2 = (SalesOrderDataRecord)record;
 	                sumOrderQty += Integer.parseInt(record2.orderQty.toString());
@@ -166,7 +197,10 @@ public class Driver extends Configured implements Tool{
 	 */
 	
 	public int run(String[] allArgs) throws Exception {
+		
+		System.out.println(Arrays.toString(allArgs));
 	    String[] args = new GenericOptionsParser(getConf(), allArgs).getRemainingArgs();
+	    System.out.println(Arrays.toString(args));
 	                               
 	    Job job = Job.getInstance(getConf());
 	    job.setJarByClass(Driver.class);
@@ -190,8 +224,10 @@ public class Driver extends Configured implements Tool{
 	    job.setGroupingComparatorClass(JoinGroupingComparator.class);
 	                               
 
-	                               
-	    FileOutputFormat.setOutputPath(job, new Path(allArgs[2]));
+	    //adding the cache file
+	    job.addCacheFile(new File(args[2]).toURI()); 
+	    
+	    FileOutputFormat.setOutputPath(job, new Path(args[3]));
 	    
 	    
 	    boolean status = job.waitForCompletion(true);
