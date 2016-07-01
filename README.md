@@ -1,2 +1,2 @@
 # MapReduceJoin
-this repository serves to explain reducer and mapper side joins
+This serves to explain reducer and mapper side joins
